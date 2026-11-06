@@ -233,10 +233,6 @@ export function startUserscript(site: SiteAdapter): void {
   let orderAnimationFrame: any = null
   let orderRenderSignature: any = null
   let orderLastCanvasNode: any = null
-  // Transizione SVG della sola anteprima geometrica nelle super-relazioni OSM.
-  // La geometria di base resta quella dell'ultimo frame renderizzato.
-  let osmTraceBaseView = null
-  let osmTraceTween = null
   let osmTraceInputAnimation: any = null
 
   // Il ciclo veloce si attiva soltanto per pan/zoom o cambiamenti della vista.
@@ -245,7 +241,6 @@ export function startUserscript(site: SiteAdapter): void {
   let orderIdleTimer: any = null
   let orderFastUntil = 0
   let orderLastMotionSignature: any = null
-  let orderMotionChangedAt = 0
   function startOrderAnimation(duration = 850) {
     orderFastUntil = Math.max(orderFastUntil, performance.now() + duration)
     if (orderAnimationFrame !== null) return
@@ -308,7 +303,6 @@ export function startUserscript(site: SiteAdapter): void {
     }
     orderFastUntil = 0
     orderLastMotionSignature = null
-    orderMotionChangedAt = 0
     orderRenderSignature = null
     orderLastCanvasNode = null
     site.resetMapState?.()
@@ -322,8 +316,6 @@ export function startUserscript(site: SiteAdapter): void {
     wmtZoomGesture = null
     osmZoomGesture = null
     osmLastZoom = null
-    osmTraceBaseView = null
-    osmTraceTween = null
     osmTraceInputAnimation = null
   }
 
@@ -874,7 +866,6 @@ export function startUserscript(site: SiteAdapter): void {
     const motionNow = performance.now()
     if (motionSignature !== orderLastMotionSignature) {
       orderLastMotionSignature = motionSignature
-      orderMotionChangedAt = motionNow
       if (wmtZoomGesture) wmtZoomGesture.lastMotion = motionNow
       startOrderAnimation(480)
     }
@@ -1112,16 +1103,6 @@ export function startUserscript(site: SiteAdapter): void {
     svg.style.transformOrigin = "0 0"
     svg.style.transform = transformText
     overlay.replaceChildren(svg)
-    if (!isWmt()) {
-      osmTraceBaseView = {
-        zoom: view.zoom,
-        lat: view.lat,
-        lon: view.lon,
-        rectWidth: rect.width,
-        rectHeight: rect.height,
-      }
-      osmTraceTween = null
-    }
   }
 
   // Inquadra la geometria della relazione quando si apre un'analisi con
@@ -2512,10 +2493,6 @@ export function startUserscript(site: SiteAdapter): void {
     // Esplora soltanto i membri relation raggiungibili dalla radice.
     // Il Set impedisce loop e richieste duplicate in caso di cicli.
     for (let pass = 0; pass < 12 && isCurrent(); pass++) {
-      const graph = relationGeometryMembers(
-        { elements: [...byKey.values()] },
-        relationId,
-      )
       const known = byKey.get("relation:" + relationId)
       if (!known) break
       const nestedIds = new Set<any>()
