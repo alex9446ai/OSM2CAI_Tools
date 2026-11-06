@@ -1,0 +1,19 @@
+{
+  "name": "osm2cai-tools",
+  "version": "0.12.9",
+  "private": true,
+  "description": "Userscripts per OpenStreetMap e Waymarked Trails",
+  "scripts": {
+    "build": "tsc --noEmit && node scripts/build.mjs",
+    "build:openstreetmap": "tsc --noEmit && node scripts/build.mjs openstreetmap",
+    "build:waymarkedtrails": "tsc --noEmit && node scripts/build.mjs waymarkedtrails",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.mjs\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.mjs\""
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "prettier": "^3.9.10",
+    "typescript": "^7.0.2"
+  }
+}

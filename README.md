@@ -25,14 +25,55 @@ Per legenda, dettagli di ogni campo, popup, comportamento dell’analisi e limit
 - Browser moderno con supporto a JavaScript ES6+.
 - Gestore di script: [Violentmonkey](https://violentmonkey.github.io/) (open source) o [Tampermonkey](https://www.tampermonkey.net/).
 - Connessione ai servizi OSM e OSM2CAI per le funzioni che richiedono API.
+- Per compilare gli userscript: Node.js 18+ e npm 8.15+.
 
 La piattaforma OSM2CAI è **riservata ai soci CAI**; per accedervi possono essere necessarie le credenziali [MyCAI](https://soci.cai.it/). L'uso delle pagine OSM e dei rispettivi dati pubblici è distinto dall'accesso alla piattaforma CAI.
 
 ## Installazione
 
 1. Installa Violentmonkey o Tampermonkey.
-2. Installa lo script [`OSM2CAI_Tools.user.js`](https://github.com/andrea-del-sarto/OSM2CAI_Tools/raw/refs/heads/main/OSM2CAI_Tools.user.js)
-3. Apri una relazione di percorso escursionistico su OpenStreetMap o Waymarked Trails.
+2. Esegui `npm ci` e `npm run build` nella cartella del progetto.
+3. Installa il file generato in `dist/` corrispondente al sito:
+   - `OSM2CAI_Tools_OpenStreetMap.user.js` per OpenStreetMap.
+   - `OSM2CAI_Tools_WaymarkedTrails.user.js` per Waymarked Trails.
+
+## Sviluppo
+
+Il sorgente è TypeScript con controllo `strict`. I due entrypoint compongono il
+codice condiviso con l'adapter specifico del sito:
+
+```text
+src/
+├── openstreetmap/      # Entry point, adapter e integrazione con iD
+│   ├── index.ts
+│   ├── id-reorder.ts
+│   ├── map-view.ts
+│   └── site.ts
+├── waymarkedtrails/    # Entry point, adapter e integrazioni WMT
+│   ├── index.ts
+│   ├── links.ts
+│   ├── map.ts
+│   └── site.ts
+└── shared/             # Orchestrazione, UI e logica usata da entrambi
+    ├── dates.ts
+    ├── geo.ts
+    ├── main.ts
+    ├── panel-layout.ts
+    ├── panel-markup.ts
+    ├── relations.ts
+    └── styles.ts
+```
+
+Le integrazioni dell'editor iD e della vista mappa OSM sono nel bundle
+OpenStreetMap; i link e gli helper cartografici WMT sono nel bundle Waymarked
+Trails. `shared/` contiene l'interfaccia e la logica comune alle due build.
+
+Comandi disponibili:
+
+- `npm run typecheck` — controlla il sorgente TypeScript strict.
+- `npm run build` — produce entrambi gli userscript in `dist/`.
+- `npm run build:openstreetmap` — produce solo lo userscript OpenStreetMap.
+- `npm run build:waymarkedtrails` — produce solo lo userscript Waymarked Trails.
 
 ## Esempi di utilizzo
 
