@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OSM2CAI Tools
 // @namespace    https://osm2cai.cai.it/
-// @version      0.12.9
+// @version      0.12.10
 // @updateURL    https://raw.githubusercontent.com/andrea-del-sarto/OSM2CAI_Tools/main/OSM2CAI_Tools.user.js
 // @downloadURL  https://raw.githubusercontent.com/andrea-del-sarto/OSM2CAI_Tools/main/OSM2CAI_Tools.user.js
 // @homepageURL   https://github.com/andrea-del-sarto/OSM2CAI_Tools
@@ -31,7 +31,7 @@
     'use strict';
 
     // La versione visualizzata nel popup proviene dai metadati Tampermonkey.
-    const SCRIPT_VERSION = GM_info?.script?.version || '0.12.9';
+    const SCRIPT_VERSION = GM_info?.script?.version || '0.12.10';
 
     // Accetta esclusivamente una permutazione degli slot way: nessuna aggiunta,
     // rimozione, modifica di ruolo o movimento dei membri node/relation.
@@ -1252,45 +1252,76 @@
         return {members,nested,missing:[...missing],cycles:[...cycles]};
     }
 
+    // Grafo geometrico condiviso: ogni coppia di nodi consecutivi di una way
+    // costituisce un segmento. Le occorrenze ripetute (anche invertite) non
+    // aggiungono rami fittizi. Un incrocio senza nodo OSM condiviso non connette.
+    function orderGeometryGraph(ways) {
+        const neighbors = new Map();
+        const segments = new Set();
+        const ensure = id => {
+            if (!neighbors.has(id)) neighbors.set(id, new Set());
+        };
+        for (const way of ways) {
+            if (!Array.isArray(way?.nodes) || way.nodes.length < 2) continue;
+            const ids = way.nodes.map(String);
+            ids.forEach(ensure);
+            for (let i = 1; i < ids.length; i++) {
+                const a = ids[i-1], b = ids[i];
+                if (a === b) continue; // Nodo consecutivo ripetuto: nessun ramo.
+                const key = a < b ? a+'|'+b : b+'|'+a;
+                if (segments.has(key)) continue;
+                segments.add(key);
+                neighbors.get(a).add(b);
+                neighbors.get(b).add(a);
+            }
+        }
+        const components = [], visited = new Set();
+        for (const root of neighbors.keys()) {
+            if (visited.has(root)) continue;
+            const group = [], stack = [root];
+            while (stack.length) {
+                const node = stack.pop();
+                if (visited.has(node)) continue;
+                visited.add(node); group.push(node);
+                for (const next of neighbors.get(node)) if (!visited.has(next)) stack.push(next);
+            }
+            components.push(group);
+        }
+        const branchNodes = [...neighbors.keys()].filter(id => neighbors.get(id).size > 2);
+        const ends = [...neighbors.keys()].filter(id => neighbors.get(id).size === 1);
+        return {neighbors, components, branchNodes, ends};
+    }
+
     function orderProblemPoints(full, relationId) {
         const rel = full?.elements?.find(e => e.type === 'relation' && String(e.id) === String(relationId));
         if (!rel) return [];
         const ways = new Map(full.elements.filter(e=>e.type==='way').map(e=>[String(e.id),e]));
         const nodes = new Map(full.elements.filter(e=>e.type==='node').map(e=>[String(e.id),e]));
-        const adj = new Map();
-        const edges = [];
-        for (const member of relationGeometryMembers(full, relationId).members) {
-            const w=ways.get(String(member.ref));
-            if (!w?.nodes?.length || w.nodes.length<2) continue;
-            const a=String(w.nodes[0]),b=String(w.nodes[w.nodes.length-1]);
-            const i=edges.length; edges.push({a,b,id:String(member.ref)});
-            for (const n of [a,b]) { if (!adj.has(n)) adj.set(n,[]); adj.get(n).push(i); }
+        const geometry = relationGeometryMembers(full, relationId);
+        // Evita indicatori parziali su geometrie o sottorelazioni mancanti.
+        if (geometry.missing.length || geometry.cycles.length) return [];
+        const selected = [];
+        for (const member of geometry.members) {
+            const way = ways.get(String(member.ref));
+            if (!way?.nodes || way.nodes.length < 2) return [];
+            selected.push(way);
         }
-        const components=[]; const visited=new Set();
-        for (const root of adj.keys()) {
-            if (visited.has(root)) continue;
-            const group=[]; const stack=[root];
-            while (stack.length) {
-                const n=stack.pop(); if (visited.has(n)) continue;
-                visited.add(n);group.push(n);
-                for (const i of adj.get(n)||[]) { stack.push(edges[i].a,edges[i].b); }
-            }
-            components.push(group);
-        }
+        const graph = orderGeometryGraph(selected);
         const issues=[];
         const add=(nodeId,type,label,detail)=>{
             const node=nodes.get(nodeId);
             if (!Number.isFinite(node?.lat) || !Number.isFinite(node?.lon)) return;
             issues.push({lat:node.lat,lon:node.lon,nodeId,type,label,detail});
         };
-        if (components.length > 1) {
-            components.forEach((group,i)=>{
-                const ends=group.filter(n=>(adj.get(n)||[]).length===1);
-                // Se è una componente chiusa (anello), indica un nodo rappresentativo.
+        if (graph.components.length > 1) {
+            graph.components.forEach((group,i)=>{
+                const ends=group.filter(n=>graph.neighbors.get(n).size===1);
+                // Per una componente chiusa si indica un nodo rappresentativo.
                 (ends.length ? ends : group.slice(0,1)).forEach(n=>add(n,'disconnected',String(i+1),'Componente '+(i+1)));
             });
         }
-        for (const [n,e] of adj) if (e.length>2) add(n,'branch','!', 'Biforcazione ('+e.length+' estremità)');
+        for (const n of graph.branchNodes)
+            add(n,'branch','!','Biforcazione ('+graph.neighbors.get(n).size+' rami distinti)');
         return issues;
     }
 
@@ -1352,32 +1383,25 @@
             const a = String(way.nodes[0]), b = String(way.nodes[way.nodes.length - 1]);
             edges.push({id:String(member.ref), a, b, index, role:member.role || ''});
         }
+        // Topologia effettiva, inclusi i nodi intermedi delle way.
+        const graph = orderGeometryGraph(edges.map(e => wayMap.get(e.id)));
+        const branches = graph.branchNodes.length;
+        const ends = graph.ends;
+        const connected = graph.components.length === 1;
+        const ring = connected && ends.length === 0 && branches === 0;
+        const linear = connected && ends.length === 2 && branches === 0;
+        const topology = !connected ? 'disconnected' : branches ? 'branching'
+            : ring ? 'ring' : linear ? 'linear' : 'complex';
+        const repeated = edges.length - new Set(edges.map(e => e.id)).size;
+        // Il riordino delle way rimane basato sulle loro ESTREMITÀ: il grafo
+        // completo serve per l'analisi, non per spezzare/modificare le way.
         const adjacency = new Map();
         for (const [i,e] of edges.entries()) {
-            // Una way chiusa contribuisce due estremità allo stesso nodo.
             for (const endpoint of [e.a,e.b]) {
                 if (!adjacency.has(endpoint)) adjacency.set(endpoint, []);
                 adjacency.get(endpoint).push(i);
             }
         }
-        const repeated = edges.length - new Set(edges.map(e => e.id)).size;
-        const branches = [...adjacency.values()].filter(items => items.length > 2).length;
-        const ends = [...adjacency.entries()].filter(([,items]) => items.length === 1).map(([id]) => id);
-        const visited = new Set(), stack = [edges[0].a];
-        while (stack.length) {
-            const node = stack.pop();
-            if (visited.has(node)) continue;
-            visited.add(node);
-            for (const i of adjacency.get(node) || []) {
-                const e = edges[i];
-                stack.push(e.a === node ? e.b : e.a);
-            }
-        }
-        const connected = visited.size === adjacency.size;
-        const ring = connected && ends.length === 0 && branches === 0;
-        const linear = connected && ends.length === 2 && branches === 0;
-        const topology = !connected ? 'disconnected' : branches ? 'branching'
-            : ring ? 'ring' : linear ? 'linear' : 'complex';
         const nonWays = rel.members.filter(m => m.type !== 'way').length;
         const nestedRelations = geometry.nested;
         const roleSensitive = edges.some(e => e.role.trim() !== '');

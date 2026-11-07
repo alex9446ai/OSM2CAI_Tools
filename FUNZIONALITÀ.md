@@ -45,10 +45,11 @@ Se il dato è disponibile, il campo può indicare che il percorso è **percorrib
 
 Passando il puntatore sopra lo stato si apre un popup con le informazioni disponibili:
 
-| Campo | Contenuto |
-| :--- | :--- |
-| **Descrizione** | Eventuali informazioni sulla percorribilità. |
-| **Data aggiornamento** | Data dell'ultimo aggiornamento delle informazioni. |
+| Campo                   | Dato OSM2CAI utilizzata | Contenuto                                                                                                        |
+| :---------------------- | :---------------------- | :--------------------------------------------------------------------------------------------------------------- |
+| Stato di percorribilità | `issues_status`         | Stati possibili:<br>- `percorribile`<br>- `parzialmente percorribile`<br>- `non percorribile`<br>- `sconosciuto` |
+| **Descrizione**         | `issues_description`    | Eventuali informazioni sulla percorribilità.                                                                     |
+| **Data aggiornamento**  | `issues_last_update`    | Data dell'ultimo aggiornamento delle informazioni.                                                               |
 
 Se una delle informazioni non è presente nei dati OSM2CAI, lo script non può fornirne il contenuto.
 
@@ -69,11 +70,11 @@ Una validazione recente non garantisce, da sola, che tutti i dati OSM siano corr
 
 Il controllo confronta la modifica più recente degli elementi della relazione OSM (**relazioni, way e nodi**) con una data di riferimento OSM2CAI, diversa in base allo stato SDA.
 
-| SDA | Data OSM2CAI utilizzata | Stati possibili |
-| :--- | :--- | :--- |
-| **4** | `validation_date` | 🟢 **aggiornato** · 🔴 **da verificare** |
-| **1, 2, 3** | `updated_at` | 🟢 **aggiornato** · 🔴 **da aggiornare** |
-| **0**, oppure dati temporali mancanti o non validi | Non disponibile | ⚪ **non verificabile** |
+| Stato di accatastamento                            | Dato OSM2CAI utilizzata | Stati possibili                           |
+| :------------------------------------------------- | :---------------------- | :---------------------------------------- |
+| **4**                                              | `validation_date`       | 🟢 **aggiornato**<br>🔴 **da verificare** |
+| **1, 2, 3**                                        | `updated_at`            | 🟢 **aggiornato**<br>🔴 **da aggiornare** |
+| **0**, oppure dati temporali mancanti o non validi | Non disponibile         | ⚪ **non verificabile**                    |
 
 - **Aggiornato:** non risultano modifiche OSM successive alla data OSM2CAI utilizzata dal controllo.
 - **Da verificare / da aggiornare:** risultano modifiche successive, da esaminare. Questo **non significa automaticamente** che ci siano errori.
@@ -97,15 +98,17 @@ L'elenco:
 
 ## 2. Analisi delle relazioni escursionistiche
 
+L’analisi topologica prende in considerazione tutti i segmenti consecutivi delle way, inclusi i nodi intermedi, e non soltanto le estremità. Le modifiche riguardano rilevamento delle biforcazioni, componenti scollegate, anelli e indicatori sulla mappa.
+
 Il pulsante **Analisi relazione** esamina la struttura delle way appartenenti alla relazione e aiuta a individuare situazioni da controllare.
 
 ### Cosa viene controllato
 
-- **Continuità e ordine delle way:** verifica che i segmenti siano collegati attraverso i nodi estremi.
-- **Discontinuità e componenti scollegate:** individua parti del percorso che non risultano connesse tra loro.
-- **Biforcazioni:** evidenzia i punti in cui la struttura presenta più diramazioni.
+- **Continuità e ordine delle way:** la connettività topologica considera i nodi condivisi lungo tutta la geometria; la verifica dell’ordine dei membri e l’eventuale riordino automatico restano basati sulle estremità delle way.
+- **Discontinuità e componenti scollegate:** individua parti del percorso che non risultano connesse tra loro nel grafo dei segmenti consecutivi.
+- **Biforcazioni:** riconosce anche gli innesti sui nodi intermedi, contando almeno tre rami geometrici distinti per nodo; i segmenti duplicati o invertiti non aumentano il numero di rami.
 - **Way ripetute:** segnala la presenza della stessa way più volte nella relazione.
-- **Tipologia del percorso:** distingue, quando possibile, un percorso con una sequenza di way collegate senza biforcazioni da un percorso ad anello o da una struttura ambigua.
+- **Tipologia del percorso:** distingue, quando possibile, una sequenza collegata senza biforcazioni, un anello e una struttura ambigua, sfruttando il grafo geometrico completo.
 - **Relazioni annidate:** tenta di analizzare anche le relazioni contenute in altre relazioni, recuperando le geometrie mancanti quando possibile.
 
 ### Visualizzazione sulla mappa
@@ -113,7 +116,7 @@ Il pulsante **Analisi relazione** esamina la struttura delle way appartenenti al
 L'analisi può mostrare:
 
 - **Frecce blu**, che indicano il verso di percorrenza;
-- **pin temporanei**, che evidenziano problemi o punti da verificare;
+- **pin temporanei**, che evidenziano problemi o punti da verificare, compresi i marcatori delle biforcazioni posizionati sul nodo OSM condiviso effettivo;
 - su OpenStreetMap, un **tracciato viola temporaneo** per rappresentare la geometria delle relazioni annidate.
 
 Quando vengono rilevati problemi, lo script tenta di **inquadrare automaticamente il percorso** e mostra subito gli indicatori, senza richiedere un secondo clic. Gli indicatori possono essere nascosti tramite **Nascondi indicatori**.
@@ -124,7 +127,7 @@ Nel pannello dei risultati è possibile consultare i punti problematici e, quand
 
 Quando la geometria è sufficientemente chiara, lo script può proporre una sequenza di way coerente con la continuità del percorso e, se disponibile, consentire di **copiarla**.
 
-L'ordinamento automatico **non viene proposto** quando la struttura è annidata o complessa, presenta ruoli particolari oppure la geometria è ambigua. In questi casi è necessaria una verifica manuale.
+L’ordinamento automatico continua a basarsi sulle estremità delle way e **non viene proposto** in presenza di diramazioni, quando la struttura è annidata o complessa, presenta ruoli particolari oppure la geometria è ambigua. In questi casi è necessaria una verifica manuale.
 
 ---
 
@@ -145,7 +148,7 @@ Il procedimento prevede alcune salvaguardie:
 
 ## 4. Limiti e avvertenze
 
-- **Analisi topologica:** la continuità delle estremità delle way non garantisce la correttezza di tag, ruoli o geometria.
-- **Strutture complesse:** grandi *superroute* e relazioni molto annidate possono superare i limiti di recupero dei dati; in tal caso l'analisi può essere **incompleta**.
+- **Analisi topologica:** un incrocio geometrico senza un nodo OSM condiviso non costituisce un collegamento. Anche un grafo connesso non garantisce la correttezza di tag, ruoli o geometria.
+- **Strutture complesse:** geometrie non disponibili, grandi *superroute* e relazioni molto annidate possono impedire l’analisi completa; in tali casi i risultati possono essere **incompleti** e richiedono una verifica manuale.
 - **Integrazione con iD:** dipende anche da componenti interni dell'editor, che potrebbero cambiare con i suoi aggiornamenti.
 - **Dati OSM2CAI:** le informazioni mostrate dipendono dalla disponibilità e dal contenuto delle risposte del servizio.

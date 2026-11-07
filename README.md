@@ -1,6 +1,6 @@
 # OSM2CAI Tools
 
-**OSM2CAI Tools** è uno script per chi mappa e verifica i **percorsi escursionistici su OpenStreetMap** (OSM), con particolare attenzione alla rete sentieristica italiana e all'integrazione con **[OSM2CAI](https://osm2cai.cai.it/)** del Club Alpino Italiano (CAI).
+**OSM2CAI Tools** è un userscript per chi mappa e verifica i **percorsi escursionistici su OpenStreetMap** (OSM), con particolare attenzione alla Rete Escursionistica Italiana (REI) e all'integrazione con **[OSM2CAI](https://osm2cai.cai.it/)** del **Club Alpino Italiano** (CAI).
 
 ![Barra principale di OSM2CAI Tools](screenshot/OSM2CAI_tools-barra%20principale.png)
 
@@ -11,6 +11,16 @@ Il progetto nasce come collegamento tra OSM e OSM2CAI. Oggi affianca alla consul
 > ⚠️ **Accesso riservato:** la piattaforma OSM2CAI è disponibile **solo per i soci del CAI**.
 
 > **Ambito:** la barra informativa OSM2CAI è la componente principale dell'interfaccia. Gli strumenti di analisi delle relazioni possono essere utili anche per percorsi non italiani, ma i dati specifici OSM2CAI dipendono dal servizio CAI.
+
+## Novità 0.12.10
+
+- Analisi topologica basata su **tutti i nodi consecutivi** delle way, inclusi gli innesti su nodi intermedi.
+- Conteggio delle biforcazioni tramite **rami geometrici distinti** (i segmenti ripetuti non aumentano il grado del nodo).
+- Rilevamento di componenti scollegate e anelli sul grafo geometrico completo.
+- Marcatori delle biforcazioni posizionati sul nodo OSM condiviso effettivo.
+- Riordino automatico prudenziale: resta basato sulle estremità delle way e non viene proposto in presenza di diramazioni.
+
+**Limite:** intersezioni geometriche prive di nodo OSM condiviso non costituiscono collegamenti topologici. La geometria non disponibile impedisce l'analisi completa. I test locali sono sintetici, non equivalgono a una verifica sui dati live delle relazioni OSM.
 
 ## Cosa offre
 
