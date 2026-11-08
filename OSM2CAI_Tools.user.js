@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OSM2CAI Tools
 // @namespace    https://osm2cai.cai.it/
-// @version      0.12.10
+// @version      0.12.12
 // @updateURL    https://raw.githubusercontent.com/andrea-del-sarto/OSM2CAI_Tools/main/OSM2CAI_Tools.user.js
 // @downloadURL  https://raw.githubusercontent.com/andrea-del-sarto/OSM2CAI_Tools/main/OSM2CAI_Tools.user.js
 // @homepageURL   https://github.com/andrea-del-sarto/OSM2CAI_Tools
@@ -31,7 +31,7 @@
     'use strict';
 
     // La versione visualizzata nel popup proviene dai metadati Tampermonkey.
-    const SCRIPT_VERSION = GM_info?.script?.version || '0.12.10';
+    const SCRIPT_VERSION = GM_info?.script?.version || '0.12.12';
 
     // Accetta esclusivamente una permutazione degli slot way: nessuna aggiunta,
     // rimozione, modifica di ruolo o movimento dei membri node/relation.
@@ -1026,12 +1026,12 @@
             const link='https://www.openstreetmap.org/edit?editor=id#map=18/'+issue.lat.toFixed(6)+'/'+issue.lon.toFixed(6);
             group.setAttribute('href',link);group.setAttribute('target','_blank');
             group.setAttribute('rel','noopener noreferrer');
-            group.setAttribute('aria-label','Modifica in iD: '+issue.detail+', nodo '+issue.nodeId);
+            group.setAttribute('aria-label','Modifica in iD: '+issue.detail);
             group.style.pointerEvents='auto';group.style.cursor='pointer';
             const circle=document.createElementNS(ns,'circle');
             circle.setAttribute('cx',x);circle.setAttribute('cy',y);
-            circle.setAttribute('r',issue.type==='branch'?'13':'12');
-            circle.setAttribute('fill',issue.type==='branch'?'#e9a419':'#e63434');
+            circle.setAttribute('r',issue.type==='branch'?'13':issue.type==='overlap'?'14':'12');
+            circle.setAttribute('fill',issue.type==='branch'?'#e9a419':issue.type==='overlap'?'#9333ea':'#e63434');
             circle.setAttribute('stroke','white');circle.setAttribute('stroke-width','3');
             circle.setAttribute('opacity','.95');
             const label=document.createElementNS(ns,'text');
@@ -1322,6 +1322,84 @@
         }
         for (const n of graph.branchNodes)
             add(n,'branch','!','Biforcazione ('+graph.neighbors.get(n).size+' rami distinti)');
+
+        // Pin viola: way ripetute come membri della relazione e segmenti
+        // coincidenti tra way DISTINTE. Gli incroci e i soli nodi condivisi
+        // non sono sovrapposizioni. Un pin per way ripetuta o coppia di way.
+        const occurrences=new Map();
+        for (const member of geometry.members) {
+            const id=String(member.ref);
+            occurrences.set(id,(occurrences.get(id)||0)+1);
+        }
+        const segmentOwners=new Map();
+        for (const [wayId] of occurrences) {
+            const ids=ways.get(wayId).nodes.map(String);
+            for (let i=1;i<ids.length;i++) {
+                const a=ids[i-1], b=ids[i];
+                if (a===b) continue;
+                const key=a<b ? a+'|'+b : b+'|'+a;
+                if (!segmentOwners.has(key)) segmentOwners.set(key,new Set());
+                segmentOwners.get(key).add(wayId);
+            }
+        }
+        const segmentInfo=key=>{
+            const [a,b]=key.split('|');
+            const na=nodes.get(a),nb=nodes.get(b);
+            if (![na?.lat,na?.lon,nb?.lat,nb?.lon].every(Number.isFinite)) return null;
+            const latitude=(na.lat+nb.lat)/2;
+            const longitude=(na.lon+nb.lon)/2;
+            // Peso approssimativo in metri: serve solo a scegliere un segmento
+            // rappresentativo, senza richiedere API aggiuntive.
+            const dx=(na.lon-nb.lon)*Math.cos(latitude*Math.PI/180);
+            const dy=na.lat-nb.lat;
+            return {lat:latitude,lon:longitude,length:Math.hypot(dx,dy)};
+        };
+        const pinOverlap=(point,detail)=>{
+            if (!point) return;
+            issues.push({lat:point.lat,lon:point.lon,nodeId:null,
+                type:'overlap',label:'2',detail});
+        };
+        for (const [wayId,count] of occurrences) {
+            if (count<2) continue;
+            const ids=ways.get(wayId).nodes.map(String);
+            // Rappresenta la way circa a metà tracciato, non all'estremità.
+            const parts=[];
+            let total=0;
+            for (let i=1;i<ids.length;i++) {
+                const a=nodes.get(ids[i-1]),b=nodes.get(ids[i]);
+                if (![a?.lat,a?.lon,b?.lat,b?.lon].every(Number.isFinite)) continue;
+                const midLat=(a.lat+b.lat)/2;
+                const weight=Math.hypot((a.lon-b.lon)*Math.cos(midLat*Math.PI/180),a.lat-b.lat);
+                if (weight<=0) continue;
+                parts.push({a,b,weight});total+=weight;
+            }
+            if (!total) continue;
+            let walked=0, point=null;
+            for (const part of parts) {
+                if (walked+part.weight>=total/2) {
+                    const t=(total/2-walked)/part.weight;
+                    point={lat:part.a.lat+(part.b.lat-part.a.lat)*t,
+                        lon:part.a.lon+(part.b.lon-part.a.lon)*t};
+                    break;
+                }
+                walked+=part.weight;
+            }
+            pinOverlap(point,'Way '+wayId+' ripetuta '+count+' volte nella relazione');
+        }
+        const pairs=new Map();
+        for (const [key,owners] of segmentOwners) {
+            const ids=[...owners].sort();
+            if (ids.length<2) continue;
+            const point=segmentInfo(key);
+            if (!point) continue;
+            for (let i=0;i<ids.length;i++) for (let j=i+1;j<ids.length;j++) {
+                const pair=ids[i]+'|'+ids[j];
+                if (!pairs.has(pair) || point.length>pairs.get(pair).length)
+                    pairs.set(pair,{...point,a:ids[i],b:ids[j]});
+            }
+        }
+        for (const p of pairs.values())
+            pinOverlap(p,'Tratto sovrapposto tra way '+p.a+' e '+p.b);
         return issues;
     }
 
@@ -1355,7 +1433,7 @@
             const link=document.createElement('a');
             link.href='https://www.openstreetmap.org/edit?editor=id#map=18/'+issue.lat+'/'+issue.lon;
             link.target='_blank';link.rel='noopener noreferrer';
-            link.textContent=issue.detail+' · node '+issue.nodeId+' · modifica in iD';
+            link.textContent=issue.detail+(issue.nodeId?' · node '+issue.nodeId:'')+' · modifica in iD';
             link.style.cssText='display:block;padding:3px 0;color:#4697f5;';
             list.appendChild(link);
         }
@@ -1540,10 +1618,10 @@
         if (result.nestedRelations) line('Sottorelazioni: '+result.nestedRelations+'. Way incluse nell’analisi geometrica; riordino automatico disabilitato.');
         if (!result.connected) line('Sono presenti componenti scollegate.');
         const issues=orderProblemPoints(orderFull,orderRelationId);
-        if (issues.length) {
-            focusOrderGeometry(orderFull,orderRelationId);
-            showOrderMap(issues);
-        }
+        // L'inquadratura della geometria non dipende dalla presenza di anomalie:
+        // deve funzionare anche per percorsi regolari, su OSM e su WMT.
+        focusOrderGeometry(orderFull,orderRelationId);
+        if (issues.length) showOrderMap(issues);
         renderOrderMapControls(output,issues);
         if (!result.proposal) {
             if (result.nestedRelations && result.continuous && !result.branches && result.connected) {

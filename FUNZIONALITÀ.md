@@ -116,7 +116,7 @@ Il pulsante **Analisi relazione** esamina la struttura delle way appartenenti al
 L'analisi può mostrare:
 
 - **Frecce blu**, che indicano il verso di percorrenza;
-- **pin temporanei**, che evidenziano problemi o punti da verificare, compresi i marcatori delle biforcazioni posizionati sul nodo OSM condiviso effettivo;
+- **pin temporanei**, che evidenziano problemi o punti da verificare: biforcazioni sul nodo OSM condiviso, e pin viola per way ripetute o segmenti condivisi da way distinte;
 - su OpenStreetMap, un **tracciato viola temporaneo** per rappresentare la geometria delle relazioni annidate.
 
 Quando vengono rilevati problemi, lo script tenta di **inquadrare automaticamente il percorso** e mostra subito gli indicatori, senza richiedere un secondo clic. Gli indicatori possono essere nascosti tramite **Nascondi indicatori**.
