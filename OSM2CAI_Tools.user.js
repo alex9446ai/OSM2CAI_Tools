@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OSM2CAI Tools
 // @namespace    https://osm2cai.cai.it/
-// @version      0.12.12
+// @version      0.12.13
 // @updateURL    https://raw.githubusercontent.com/andrea-del-sarto/OSM2CAI_Tools/main/OSM2CAI_Tools.user.js
 // @downloadURL  https://raw.githubusercontent.com/andrea-del-sarto/OSM2CAI_Tools/main/OSM2CAI_Tools.user.js
 // @homepageURL   https://github.com/andrea-del-sarto/OSM2CAI_Tools
@@ -31,7 +31,7 @@
     'use strict';
 
     // La versione visualizzata nel popup proviene dai metadati Tampermonkey.
-    const SCRIPT_VERSION = GM_info?.script?.version || '0.12.12';
+    const SCRIPT_VERSION = GM_info?.script?.version || '0.12.13';
 
     // Accetta esclusivamente una permutazione degli slot way: nessuna aggiunta,
     // rimozione, modifica di ruolo o movimento dei membri node/relation.
@@ -1233,7 +1233,12 @@
     // Questa vista serve SOLO all'analisi: non autorizza alcun riordino in iD.
     function relationGeometryMembers(full, relationId) {
         const elements=full?.elements || [];
-        const relations=new Map(elements.filter(e=>e.type==='relation').map(e=>[String(e.id),e]));
+        const relations = new Map();
+        for (const element of elements) {
+            if (element.type === 'relation') {
+                relations.set(String(element.id), element);
+            }
+        }
         const members=[], missing=new Set(), cycles=new Set();
         let nested=0;
         function visit(id, ancestors, depth) {
@@ -1262,17 +1267,24 @@
             if (!neighbors.has(id)) neighbors.set(id, new Set());
         };
         for (const way of ways) {
-            if (!Array.isArray(way?.nodes) || way.nodes.length < 2) continue;
-            const ids = way.nodes.map(String);
-            ids.forEach(ensure);
-            for (let i = 1; i < ids.length; i++) {
-                const a = ids[i-1], b = ids[i];
-                if (a === b) continue; // Nodo consecutivo ripetuto: nessun ramo.
+            const nodes = way?.nodes;
+            if (!Array.isArray(nodes) || nodes.length < 2) continue;
+            let a = String(nodes[0]);
+            ensure(a);
+            for (let i = 1; i < nodes.length; i++) {
+                const b = String(nodes[i]);
+                ensure(b);
+                if (a === b) {
+                    a = b;
+                    continue;
+                }
                 const key = a < b ? a+'|'+b : b+'|'+a;
-                if (segments.has(key)) continue;
-                segments.add(key);
-                neighbors.get(a).add(b);
-                neighbors.get(b).add(a);
+                if (!segments.has(key)) {
+                    segments.add(key);
+                    neighbors.get(a).add(b);
+                    neighbors.get(b).add(a);
+                }
+                a = b;
             }
         }
         const components = [], visited = new Set();
@@ -1293,10 +1305,23 @@
     }
 
     function orderProblemPoints(full, relationId) {
-        const rel = full?.elements?.find(e => e.type === 'relation' && String(e.id) === String(relationId));
-        if (!rel) return [];
-        const ways = new Map(full.elements.filter(e=>e.type==='way').map(e=>[String(e.id),e]));
-        const nodes = new Map(full.elements.filter(e=>e.type==='node').map(e=>[String(e.id),e]));
+        const elements = full?.elements || [];
+        const expectedId = String(relationId);
+        const hasRelation = elements.some(element =>
+            element.type === 'relation' &&
+            String(element.id) === expectedId
+        );
+        if (!hasRelation) return [];
+
+        const ways = new Map();
+        const nodes = new Map();
+        for (const element of elements) {
+            if (element.type === 'way') {
+                ways.set(String(element.id), element);
+            } else if (element.type === 'node') {
+                nodes.set(String(element.id), element);
+            }
+        }
         const geometry = relationGeometryMembers(full, relationId);
         // Evita indicatori parziali su geometrie o sottorelazioni mancanti.
         if (geometry.missing.length || geometry.cycles.length) return [];
@@ -1444,7 +1469,11 @@
     // necessariamente un errore OSM (es. andata/ritorno), ma rende ambiguo
     // un riordino automatico basato soltanto sulle estremità.
     function checkMemberOrder(full, relationId) {
-        const rel = full?.elements?.find(e => e.type === 'relation' && String(e.id) === String(relationId));
+        const elements = full?.elements || [];
+        const rel = elements.find(element =>
+            element.type === 'relation' &&
+            String(element.id) === String(relationId)
+        );
         if (!rel || !Array.isArray(rel.members)) return {error:'Relazione non disponibile nel full.json.'};
         const geometry=relationGeometryMembers(full, relationId);
         const members = geometry.members;
@@ -1452,7 +1481,12 @@
             error:'Analisi incompleta: sottorelazioni non disponibili o riferimento circolare ('+
                 [...geometry.missing,...geometry.cycles].join(', ')+').', incomplete:true};
         if (!members.length) return {error:'La relazione e le sottorelazioni non contengono way.'};
-        const wayMap = new Map((full.elements || []).filter(e => e.type === 'way').map(e => [String(e.id), e]));
+        const wayMap = new Map();
+        for (const element of elements) {
+            if (element.type === 'way') {
+                wayMap.set(String(element.id), element);
+            }
+        }
         const edges = [];
         for (const [index, member] of members.entries()) {
             const way = wayMap.get(String(member.ref));
@@ -3252,7 +3286,6 @@
         if (!Array.isArray(full?.elements)) return full;
         const byKey=new Map(full.elements.map(e=>[e.type+':'+e.id,e]));
         const fetchedRelations=new Set([String(relationId)]);
-        const fetchedWays=new Set();
         const maxRelations=36, maxWays=80;
         const merge=result=>{
             for (const item of result?.elements || []) {
@@ -3267,7 +3300,6 @@
         // Esplora soltanto i membri relation raggiungibili dalla radice.
         // Il Set impedisce loop e richieste duplicate in caso di cicli.
         for (let pass=0;pass<12 && isCurrent();pass++) {
-            const graph=relationGeometryMembers({elements:[...byKey.values()]},relationId);
             const known=byKey.get('relation:'+relationId);
             if (!known) break;
             const nestedIds=new Set();
@@ -3302,7 +3334,6 @@
         }).slice(0,maxWays);
         for (let i=0;i<missingWayIds.length && isCurrent();i+=8) {
             const ids=missingWayIds.slice(i,i+8);
-            for (const id of ids) fetchedWays.add(id);
             const results=await Promise.all(ids.map(id=>getJson(
                 'https://api.openstreetmap.org/api/0.6/way/'+encodeURIComponent(id)+'/full.json')));
             if (!isCurrent()) return full;

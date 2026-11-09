@@ -1,3 +1,11 @@
+## 0.12.13
+
+### Migliorato
+
+- **Analisi delle geometrie:** ridotte le allocazioni temporanee nella
+  costruzione del grafo e nell'indicizzazione di relazioni, way e nodi.
+- **Caricamento delle sottorelazioni:** rimosso un calcolo non utilizzato.
+
 ## 0.12.12
 
 ### Aggiunto

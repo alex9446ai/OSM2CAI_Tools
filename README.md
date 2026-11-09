@@ -22,7 +22,8 @@ Per legenda, dettagli di ogni campo, popup, comportamento dell’analisi e limit
 
 ## Requisiti
 
-- Browser moderno con supporto a JavaScript ES6+.
+- Browser aggiornato, con supporto nativo a ECMAScript 2026. Non è prevista
+  transpilation per browser obsoleti.
 - Gestore di script: [Violentmonkey](https://violentmonkey.github.io/) (open source) o [Tampermonkey](https://www.tampermonkey.net/).
 - Connessione ai servizi OSM e OSM2CAI per le funzioni che richiedono API.
 
